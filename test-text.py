@@ -6,13 +6,53 @@ def load_model():
     """Загружает модель и токенизатор с правильными параметрами"""
     try:
         print("Загружаем модель NSFW-3B...")
-        model = AutoModelForCausalLM.from_pretrained(
-            "UnfilteredAI/NSFW-3B", 
-            trust_remote_code=True, 
-            torch_dtype=torch.float16,  # Изменено с bfloat16 на float16
-            device_map="auto"  # Автоматическое размещение на GPU
-        )
         
+        # Пробуем разные варианты загрузки
+        load_options = [
+            {
+                "torch_dtype": torch.float32,
+                "device_map": None,
+                "low_cpu_mem_usage": True
+            },
+            {
+                "torch_dtype": torch.float16,
+                "device_map": "auto",
+                "low_cpu_mem_usage": True
+            },
+            {
+                "torch_dtype": torch.float32,
+                "device_map": "auto",
+                "low_cpu_mem_usage": True
+            }
+        ]
+        
+        model = None
+        for i, options in enumerate(load_options):
+            try:
+                print(f"Попытка загрузки {i+1}/3 с параметрами: {options}")
+                model = AutoModelForCausalLM.from_pretrained(
+                    "UnfilteredAI/NSFW-3B", 
+                    trust_remote_code=True,
+                    **options
+                )
+                
+                # Если device_map не используется, перемещаем вручную
+                if options["device_map"] is None and torch.cuda.is_available():
+                    model = model.to("cuda")
+                
+                print("Модель успешно загружена!")
+                break
+                
+            except Exception as e:
+                print(f"Попытка {i+1} не удалась: {e}")
+                if i == len(load_options) - 1:
+                    raise e
+                continue
+        
+        if model is None:
+            raise Exception("Не удалось загрузить модель ни одним из способов")
+        
+        # Загружаем токенизатор
         tokenizer = AutoTokenizer.from_pretrained(
             "UnfilteredAI/NSFW-3B", 
             trust_remote_code=True
@@ -22,7 +62,6 @@ def load_model():
         if tokenizer.pad_token is None:
             tokenizer.pad_token = tokenizer.eos_token
             
-        print("Модель успешно загружена!")
         return model, tokenizer
         
     except Exception as e:
@@ -43,8 +82,14 @@ def create_prompt(system_message, user_message):
 def generate_response(model, tokenizer, prompt, max_length=512):
     """Генерирует ответ модели"""
     try:
-        # Токенизируем входной текст
-        inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=2048)
+        # Токенизируем входной текст с более консервативными параметрами
+        inputs = tokenizer(
+            prompt, 
+            return_tensors="pt", 
+            truncation=True, 
+            max_length=1024,  # Уменьшено с 2048
+            padding=True
+        )
         
         # Перемещаем на GPU если доступно
         if torch.cuda.is_available():
@@ -53,23 +98,64 @@ def generate_response(model, tokenizer, prompt, max_length=512):
         # Создаем стример для вывода
         streamer = TextStreamer(tokenizer, skip_prompt=True, skip_special_tokens=True)
         
-        # Генерируем ответ
-        with torch.no_grad():
-            outputs = model.generate(
-                **inputs,
-                max_new_tokens=max_length,
-                temperature=0.7,
-                top_p=0.9,
-                do_sample=True,
-                pad_token_id=tokenizer.eos_token_id,
-                eos_token_id=tokenizer.eos_token_id,
-                streamer=streamer,
-                use_cache=True
-            )
+        # Пробуем разные варианты генерации
+        generation_options = [
+            {
+                "max_new_tokens": max_length,
+                "temperature": 0.7,
+                "top_p": 0.9,
+                "do_sample": True,
+                "pad_token_id": tokenizer.eos_token_id,
+                "eos_token_id": tokenizer.eos_token_id,
+                "streamer": streamer,
+                "use_cache": True,
+                "repetition_penalty": 1.1
+            },
+            {
+                "max_new_tokens": max_length,
+                "temperature": 0.8,
+                "top_p": 0.95,
+                "do_sample": True,
+                "pad_token_id": tokenizer.eos_token_id,
+                "eos_token_id": tokenizer.eos_token_id,
+                "use_cache": False,  # Отключаем кеш
+                "repetition_penalty": 1.1
+            },
+            {
+                "max_new_tokens": max_length,
+                "temperature": 0.7,
+                "do_sample": False,  # Жадный поиск
+                "pad_token_id": tokenizer.eos_token_id,
+                "eos_token_id": tokenizer.eos_token_id,
+                "use_cache": False
+            }
+        ]
         
-        # Декодируем ответ
-        response = tokenizer.decode(outputs[0][inputs['input_ids'].shape[1]:], skip_special_tokens=True)
-        return response.strip()
+        for i, options in enumerate(generation_options):
+            try:
+                print(f"Попытка генерации {i+1}/3...")
+                
+                # Генерируем ответ
+                with torch.no_grad():
+                    outputs = model.generate(
+                        **inputs,
+                        **options
+                    )
+                
+                # Декодируем ответ
+                response = tokenizer.decode(
+                    outputs[0][inputs['input_ids'].shape[1]:], 
+                    skip_special_tokens=True
+                )
+                return response.strip()
+                
+            except Exception as e:
+                print(f"Попытка генерации {i+1} не удалась: {e}")
+                if i == len(generation_options) - 1:
+                    raise e
+                continue
+        
+        return "Извините, не удалось сгенерировать ответ."
         
     except Exception as e:
         print(f"Ошибка при генерации: {e}")

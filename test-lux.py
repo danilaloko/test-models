@@ -1,9 +1,23 @@
+import os
+from dotenv import load_dotenv
 from diffusers import AutoPipelineForText2Image
 import torch
-import os
 
-pipeline = AutoPipelineForText2Image.from_pretrained("black-forest-labs/FLUX.1-dev", torch_dtype=torch.bfloat16) # or black-forest-labs/FLUX.1-schnell
-pipeline.to("cuda")
+# Загружаем переменные окружения из .env файла
+load_dotenv()
+
+# Загружаем модель с аутентификацией
+pipeline = AutoPipelineForText2Image.from_pretrained(
+    "black-forest-labs/FLUX.1-dev", 
+    torch_dtype=torch.bfloat16,
+    use_auth_token=os.environ["HF_TOKEN"]  # Добавляем токен для доступа
+)
+
+# Перемещаем на GPU если доступно
+if torch.cuda.is_available():
+    pipeline = pipeline.to("cuda")
+else:
+    print("⚠️  CUDA недоступна, используем CPU (будет медленно)")
 
 pipeline.load_lora_weights("lustlyai/Flux_Lustly.ai_Uncensored_nsfw_v1",
                            weight_name="flux_lustly-ai_v1.safetensors",

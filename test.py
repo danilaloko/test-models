@@ -10,10 +10,10 @@ client = InferenceClient(
 )
 
 # output is a PIL.Image object
-# Попробуйте одну из этих моделей:
+# Используем модель, которая точно работает через Inference API
 image = client.text_to_image(
     "Astronaut riding a horse",
-    model="stabilityai/stable-diffusion-2-1",  # Популярная модель
+    model="stabilityai/stable-diffusion-xl-base-1.0",  # Модель, которая работает через API
     # model="runwayml/stable-diffusion-v1-5",  # Альтернатива
     # model="CompVis/stable-diffusion-v1-4",   # Еще одна альтернатива
     # model="Qwen/Qwen-Image",  # Оригинальная модель

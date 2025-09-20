@@ -9,35 +9,43 @@ def load_model():
         
         # Пробуем различные варианты загрузки для исправления ошибки с тензорами
         load_configs = [
-            # Конфигурация 1: Без device_map, CPU сначала
+            # Конфигурация 1: Стандартная загрузка с safetensors (обновленный синтаксис)
             {
                 "trust_remote_code": True,
-                "torch_dtype": torch.float32,
+                "dtype": torch.bfloat16,  # Исправлено: torch_dtype -> dtype
                 "low_cpu_mem_usage": True,
-                "use_safetensors": False
+                "use_safetensors": True,  # Включаем safetensors для шардированной модели
+                "device_map": "auto"
             },
-            # Конфигурация 2: float16 без device_map
+            # Конфигурация 2: float16 с safetensors  
             {
                 "trust_remote_code": True,
-                "torch_dtype": torch.float16,
+                "dtype": torch.float16,
                 "low_cpu_mem_usage": True,
-                "use_safetensors": False
+                "use_safetensors": True,
+                "device_map": "auto"
             },
-            # Конфигурация 3: Принудительная загрузка с исправлением конфигурации
+            # Конфигурация 3: Консервативная загрузка
             {
                 "trust_remote_code": True,
-                "torch_dtype": torch.float16,
+                "dtype": torch.float32,
+                "low_cpu_mem_usage": True,
+                "use_safetensors": True
+            },
+            # Конфигурация 4: Без указания формата (автоопределение)
+            {
+                "trust_remote_code": True,
+                "dtype": torch.bfloat16,
                 "device_map": "auto",
-                "low_cpu_mem_usage": True,
-                "use_safetensors": False,
-                "attn_implementation": "eager"  # Принудительно используем eager attention
+                "low_cpu_mem_usage": True
             }
         ]
         
         model = None
         for i, config in enumerate(load_configs):
             try:
-                print(f"Попытка загрузки {i+1}/3...")
+                print(f"Попытка загрузки {i+1}/4...")
+                print(f"Конфигурация: {config}")
                 model = AutoModelForCausalLM.from_pretrained(
                     "UnfilteredAI/NSFW-3B",
                     **config
